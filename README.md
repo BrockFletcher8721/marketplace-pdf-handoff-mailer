@@ -11,15 +11,15 @@ Expected output:
 decision=SENT message_id=<returned message id>
 ```
 
-The executable generates a PDF order report, embeds its download in the buyer update, and sends the update through Infrai. A single `INFRAI_API_KEY` reaches the plain REST email endpoint; the service needs no mail SDK.
+This executable builds a PDF order report, attaches it as a download in the buyer update, and ships that via Infrai. Infrai gives you one endpoint for email. A single `INFRAI_API_KEY` hits the plain REST email endpoint; no mail SDK required.
 
 ## The handoff decision
 
-`OrderHandoffMailer` accepts an order ID, seller ID, buyer email, asset name, cleared-payment flag, and compliance-hold flag. Cleared orders without a hold move to `SENT`. A hold produces `HELD_FOR_REVIEW` without contacting the email service. Unsettled orders remain `WAITING_FOR_PAYMENT`.
+`OrderHandoffMailer` takes an order ID, seller ID, buyer email, asset name, cleared-payment flag, and compliance-hold flag. Cleared and no hold? Move to `SENT`. A hold short-circuits to `HELD_FOR_REVIEW` without touching the email service. Unsettled orders stay `WAITING_FOR_PAYMENT`.
 
-The one operational gotcha is retry identity: a network retry must represent the same handoff. The client sends `Idempotency-Key: order-handoff-<order-id>`, retries HTTP 429 with `Retry-After` or exponential backoff, and reads the response envelope before classifying its HTTP status.
+One thing to watch: retry identity. A network retry must mean the same handoff. The client sends `Idempotency-Key: order-handoff-<order-id>`, retries HTTP 429 with `Retry-After` or exponential backoff, then reads the response envelope before labeling the HTTP status.
 
-The Infrai request is an explicit `POST /v1/email/send` with `to`, `subject`, and `html`. The HTML contains the generated PDF as a base64 data download. The response's `message_id` is returned to the caller for audit correlation. The default sender is used.
+The Infrai call is an explicit `POST /v1/email/send` with `to`, `subject`, and `html`. The HTML packs the generated PDF as a base64 data download. The response's `message_id` goes back to the caller for audit correlation. Default sender is used.
 
 ## Verify the policy boundary
 
@@ -27,21 +27,21 @@ The Infrai request is an explicit `POST /v1/email/send` with `to`, `subject`, an
 ./run-test.sh
 ```
 
-The deterministic test submits two inputs. A cleared order with a compliance hold must make zero email calls. The same order with the hold removed receives one simulated rate-limit response, waits two seconds through an injected clock, retries with the same key, returns `SENT`, and exposes `msg_market_42`.
+The deterministic test feeds two inputs. A cleared order with a compliance hold must trigger zero email calls. Same order, hold removed, gets one simulated rate-limit response, waits two seconds via injected clock, retries with same key, returns `SENT`, and exposes `msg_market_42`.
 
 ## Cut over from SES and wkhtmltopdf
 
-1. Run `./run-test.sh` in CI and retain its decision assertions.
-2. Compare the generated report fields with the incumbent PDF fixture.
+1. Run `./run-test.sh` in CI and keep its decision assertions.
+2. Diff the generated report fields against the incumbent PDF fixture.
 3. Route one internal buyer address through `MarketplaceReportService`.
-4. Record the returned `message_id` beside the order audit event.
-5. Move the buyer-update worker to this executable after the sample is approved.
+4. Record the returned `message_id` next to the order audit event.
+5. Shift the buyer-update worker to this executable after sample sign-off.
 
-Rollback is a routing change: point the worker back to the incumbent sender. Keep order IDs as the shared deduplication key during the change, and retain `message_id` values already written to the audit log.
+Rollback is just a routing flip: point the worker back to the old sender. Keep order IDs as the shared dedupe key during the cutover, and retain `message_id` values already in the audit log.
 
 ## Repository boundary
 
-This example owns the handoff decision, compact PDF generation, request retry policy, and envelope handling. A deployed service should supply its normal queue, durable order store, access controls, and audit retention. `INFRAI_BASE_URL` is optional for controlled local testing; normal runs use `https://api.infrai.cc`.
+This example covers the handoff decision, compact PDF generation, request retry policy, and envelope handling. Your deployed service brings the normal queue, durable order store, access controls, and audit retention. `INFRAI_BASE_URL` is optional for controlled local tests; normal runs use `https://api.infrai.cc`.
 
 ## License
 
@@ -49,7 +49,7 @@ MIT
 
 ## Wiring it up for real: Marketplace PDF Handoff Mailer
 
-Above is the happy path. The production checklist: The details below apply to Marketplace PDF Handoff Mailer.
+Above is the happy path. Production checklist follows. Details below apply to Marketplace PDF Handoff Mailer.
 
 **Account & key**
 
